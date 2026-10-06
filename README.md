@@ -32,10 +32,86 @@ llvm-basic-study/
 Each `*_builder.cpp` starts with a QUICK NOTES comment block summarizing the concepts
 for that lesson. Later lessons point back to earlier ones instead of repeating them.
 
-## Prerequisites
+## Environment
 
-- LLVM installed with `llvm-config`, `clang`, `lli` and `llc` on your `PATH`
-  (the build line below assumes Homebrew on Apple Silicon: `/opt/homebrew`)
+### Hardware and OS
+
+| Item | Value |
+|---|---|
+| Machine | Apple M3 Max, 16 cores, 64 GB RAM (Apple Silicon, arm64) |
+| OS | macOS 26.6.2 (Darwin 25.6.0) when recorded |
+| Xcode / SDK | Xcode 27.0, macOS SDK 27.0 |
+| System compiler | Apple clang 21.0.0 (used only to build LLVM itself) |
+| Build tools | CMake 4.1.0, Ninja 1.13.1 (Homebrew, `/opt/homebrew`) |
+| Libraries | `zstd`, `zlib` (Homebrew), `libxml2` (macOS SDK) |
+| Python | 3.9.13 (needed by LLVM's `lit` test runner) |
+
+### LLVM toolchain (built from source, not installed)
+
+| Item | Value |
+|---|---|
+| Source | `https://github.com/llvm/llvm-project.git`, branch `main` |
+| Commit | `d26ea02060b1` (2025-08-21) |
+| Version | `22.0.0git`, a development snapshot, **not** a release |
+| Build | Ninja, `Release`, projects = `clang` only, no runtimes |
+| Targets | `all` backends |
+| Assertions | **OFF**, so call `verifyModule()` in builder programs to catch invalid IR |
+| RTTI / exceptions | OFF (LLVM default), so builder programs must also use `-fno-rtti -fno-exceptions` |
+| Linking | Static libraries (no `libLLVM.dylib`) |
+
+Because this is a development snapshot, APIs are newer than many tutorials. For
+example `Host.h` moved to `llvm/TargetParser/Host.h`, and pointers are opaque (`ptr`).
+
+### Directory layout on disk
+
+```
+~/MY_LLVM/
+├── llvm-project/     LLVM monorepo checkout (source) and build/ (the Ninja build tree)
+├── llvm-basic-study/ this repo
+└── LLVM_SETUP.md     detailed environment notes
+```
+
+The build is out-of-tree: source lives in `llvm-project/llvm`, generated files in
+`llvm-project/build`. The `clang`, `llc`, `opt`, `lli` and `llvm-config` used here
+are the self-built ones in `llvm-project/build/bin`, not Apple's.
+
+### Shell setup (`~/.zshrc`)
+
+```sh
+export PATH="$HOME/MY_LLVM/llvm-project/build/bin:$PATH"   # self-built tools first
+export SDKROOT=$(xcrun --show-sdk-path)                    # a self-built clang can't find the SDK otherwise
+```
+
+Without `SDKROOT`, even `#include <stdio.h>` fails with `'stdio.h' file not found`.
+
+### Reproduce the build
+
+```sh
+brew install cmake ninja zstd
+git clone https://github.com/llvm/llvm-project.git ~/MY_LLVM/llvm-project
+cd ~/MY_LLVM/llvm-project && git checkout d26ea02060b1
+cmake -S llvm -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DLLVM_ENABLE_PROJECTS="clang" \
+  -DLLVM_TARGETS_TO_BUILD="all"
+cmake --build build
+```
+
+### Check your setup
+
+```sh
+which clang llc opt lli llvm-config     # all under llvm-project/build/bin
+clang --version                         # clang version 22.0.0git
+llvm-config --version --build-mode --assertion-mode --has-rtti
+```
+
+Expected: `22.0.0git`, `Release`, `OFF`, `NO`.
+
+### Note on the committed `.ll` files
+
+Each `.ll` file records the target triple of the machine and SDK it was generated on
+(`arm64-apple-macosx26.0.0` in most, `macosx27.0.0` in the newest). They can differ
+between lessons if the OS or Xcode was updated in between. This is harmless.
 
 ## Build and run a builder program
 
